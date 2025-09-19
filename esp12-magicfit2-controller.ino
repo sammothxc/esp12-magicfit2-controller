@@ -1,32 +1,28 @@
-    #include "esp12-magicfit2-controller_secrets.h"
-
-    const char* ssid = SECRET_SSID;
-    const char* password = SECRET_PASS;
-    const char* apiKey = SECRET_API_KEY;
-
+#include "esp12-magicfit2-controller_secrets.h"
+#include <Ticker.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>
+#include <ESP8266mDNS.h>
 #include <ESPAsyncWebServer.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 
-const char* ssid = "YOUR_SSID";
-const char* password = "YOUR_PASSWORD";
+const char* ssid = SECRET_SSID;
+const char* password = SECRET_PASS;
+const char* otapass = SECRET_OTAPASS;
 
 AsyncWebServer server(80);
+ESP8266WiFiMulti WiFiMulti;
+Ticker pwmTicker;
 
-// Motor / PWM setup
 const int pwmPin = D2;
 volatile int dutyPercent = 85;  // 85% = slowest
 const int pwmFreq = 63;
 volatile bool pwmState = false;
 volatile bool motorOn = false;
-
-// Timer tracking
 unsigned long startMillis = 0;
 unsigned long accumulatedMillis = 0;
-
-// UI scale: 0 = slowest, 100 = fastest
-int speedPercent = 0;
-
-Ticker pwmTicker;
+int speedPercent = 0; // 0 = slowest, 100 = fastest
 
 // HTML page
 const char index_html[] PROGMEM = R"rawliteral(
@@ -84,7 +80,6 @@ setInterval(async () => {
 </html>
 )rawliteral";
 
-// ---------------- PWM / Ticker ----------------
 void IRAM_ATTR pwmTick() {
   static uint32_t highMs, lowMs;
 
@@ -109,7 +104,6 @@ void IRAM_ATTR pwmTick() {
   lowMs  = periodMs - highMs;
 }
 
-// ---------------- Speed / Motor control ----------------
 void setDutyFromUI(int uiVal) {
   uiVal = constrain(uiVal,0,100);
   dutyPercent = map(uiVal,0,100,85,50); // 0=slowest,100=fastest
@@ -138,18 +132,54 @@ String formatElapsed(unsigned long ms) {
   return String(buf);
 }
 
-// ---------------- Setup ----------------
 void setup() {
   Serial.begin(115200);
+  Serial.println("Booting");
+  WiFi.mode(WIFI_STA);
+  WiFi.hostname("VibePlate");
+  WiFiMulti.addAP(ssid, password);
+  ArduinoOTA.setPassword(otapass);
+  Serial.println();
+  Serial.print("Connecting to WiFi");
+  while (WiFiMulti.run() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  Serial.println();
+  Serial.println("OTA Starting...");
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH) {
+      type = "sketch";
+    } else {  // U_FS
+      type = "filesystem";
+    }
+
+    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
+    Serial.println("Start updating " + type);
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      Serial.println("End Failed");
+    }
+  });
+  ArduinoOTA.begin();
+  Serial.print("Connected! IP: "); Serial.println(WiFi.localIP());
+  delay(500);
   pinMode(pwmPin, OUTPUT);
   digitalWrite(pwmPin, LOW);
-
-  WiFi.begin(ssid,password);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println();
-  Serial.print("Connected! IP: "); Serial.println(WiFi.localIP());
-
   pwmTicker.once_ms(0, pwmTick);
 
   // Serve page
@@ -184,7 +214,6 @@ void setup() {
   server.begin();
 }
 
-// ---------------- Loop ----------------
 void loop() {
-  // Nothing needed, AsyncWebServer + Ticker handle everything
+  ArduinoOTA.handle();
 }
