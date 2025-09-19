@@ -315,6 +315,51 @@ async function runWorkoutPlan() {
   planRunning = false;
   planPaused = false;
 }
+let wakeLock = null;
+
+async function enableWakeLock() {
+  try {
+    if ("wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      console.log("Wake Lock active");
+
+      wakeLock.addEventListener("release", () => {
+        console.log("Wake Lock released");
+      });
+    } else {
+      // fallback for older iOS (pre-16.4)
+      const video = document.createElement("video");
+      video.src =
+        "data:video/mp4;base64,AAAAIGZ0eXBtcDQyAAAAAG1wNDEAAAACbW9vdgAAAGxtdmhkAAAAANrDCjza" +
+        "wwo8AAAAAAABAAEAAAEAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAA" +
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAD9AAAB9AAAArEAAABAAAAAAAAAAAAAAAA" +
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; 
+      video.loop = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.style.display = "none";
+      document.body.appendChild(video);
+      video.play();
+      console.log("Wake Lock fallback via silent video");
+    }
+  } catch (err) {
+    console.error(`${err.name}, ${err.message}`);
+  }
+}
+
+// if the tab loses focus, re-request on return
+document.addEventListener("visibilitychange", () => {
+  if (wakeLock !== null && document.visibilityState === "visible") {
+    enableWakeLock();
+  }
+});
+
+// enable immediately on load
+window.addEventListener("load", () => {
+  enableWakeLock();
+});
 
 </script>
 </body>
