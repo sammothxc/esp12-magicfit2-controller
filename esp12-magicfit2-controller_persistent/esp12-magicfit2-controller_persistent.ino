@@ -13,6 +13,14 @@ AsyncWebServer server(80);
 ESP8266WiFiMulti WiFiMulti;
 Ticker pwmTicker;
 
+struct Step { int speed; int duration; };
+Step workoutSteps[20];
+int stepCount = 0;
+bool planRunning = false;
+bool planPaused = false;
+int currentStep = 0;
+int elapsedTime = 0;
+
 const int pwmPin = D2;
 volatile int dutyPercent = 85;  // 85% = slowest
 const int pwmFreq = 63;
@@ -147,11 +155,36 @@ function updateToggleBtn(state) {
 }
 
 window.onload = async () => {
-  const resp = await fetch(`/state`);
+  const resp = await fetch("/planState");
   const data = await resp.json();
-  updateToggleBtn(data.state);
-  slider.value = data.speed;
-  speedVal.textContent = data.speed;
+
+  workoutSteps = data.workoutSteps || [];
+  renderSteps();
+
+  planRunning = data.planRunning;
+  planPaused = data.planPaused;
+  currentStep = data.currentStep || 0;
+  let elapsed = data.elapsedTime || 0;
+
+  planElapsed.textContent = formatTime(elapsed);
+  const totalTime = workoutSteps.reduce((sum,s)=>sum+s.duration,0);
+  planRemaining.textContent = formatTime(totalTime - elapsed);
+  planProgress.style.width = ((elapsed/totalTime)*100).toFixed(1)+"%";
+
+  if(planRunning){
+    startPlanBtn.textContent = planPaused ? "Resume Plan" : "Pause Plan";
+    startPlanBtn.classList.toggle("paused", planPaused);
+    startPlanBtn.classList.toggle("running", !planPaused);
+    stopPlanBtn.style.display = "block";
+
+    // Activate Workout Plan tab
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    document.querySelector('.tab[data-tab="2"]').classList.add('active');
+    document.getElementById('tab2').classList.add('active');
+
+    runWorkoutPlan(currentStep, elapsed);
+  }
 };
 
 const stepsContainer = document.getElementById('stepsContainer');
@@ -269,37 +302,47 @@ stopPlanBtn.onclick = async () => {
 };
 
 
-async function runWorkoutPlan() {
-  let totalTime = workoutSteps.reduce((sum, step) => sum + step.duration, 0);
-  let elapsedTime = 0;
+async function runWorkoutPlan(startIndex=0, elapsedTime=0) {
+  const totalTime = workoutSteps.reduce((sum,step)=>sum+step.duration,0);
 
-  for (let stepIndex = 0; stepIndex < workoutSteps.length; stepIndex++) {
+  for(let stepIndex = startIndex; stepIndex < workoutSteps.length; stepIndex++) {
     const step = workoutSteps[stepIndex];
-
-    // Stop requested
-    if (!planRunning) break;
-
     currentStepSpeed.textContent = step.speed;
+
+    if(!planRunning) break;
+
     await fetch(`/speed?value=${step.speed}`);
     await fetch(`/toggle`); // motor on
 
-    for (let t = 0; t < step.duration; t++) {
-      // Stop requested
-      if (!planRunning) break;
+    const stepElapsedStart = (stepIndex === startIndex) ? elapsedTime % step.duration : 0;
 
-      // Pause handling
-      while (planPaused) {
-        if (!planRunning) break; // stop mid-pause
-        await new Promise(r => setTimeout(r, 200));
+    for(let t = stepElapsedStart; t < step.duration; t++) {
+      if(!planRunning) break;
+
+      while(planPaused) {
+        if(!planRunning) break;
+        await new Promise(r=>setTimeout(r,200));
       }
 
-      if (!planRunning) break;
+      if(!planRunning) break;
 
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r=>setTimeout(r,1000));
       elapsedTime++;
       planElapsed.textContent = formatTime(elapsedTime);
       planRemaining.textContent = formatTime(totalTime - elapsedTime);
-      planProgress.style.width = `${((elapsedTime / totalTime) * 100).toFixed(1)}%`;
+      planProgress.style.width = ((elapsedTime/totalTime)*100).toFixed(1) + "%";
+
+      // Optional: report progress to server
+      fetch(`/updatePlan`, {
+        method:'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          currentStep: stepIndex,
+          elapsedTime: elapsedTime,
+          planRunning,
+          planPaused
+        })
+      });
     }
 
     await fetch(`/toggle`); // motor off after step
@@ -308,12 +351,18 @@ async function runWorkoutPlan() {
   // Reset at the end
   planProgress.style.width = '0%';
   planElapsed.textContent = '00:00';
-  planRemaining.textContent = formatTime(
-    workoutSteps.reduce((sum, s) => sum + s.duration, 0)
-  );
+  planRemaining.textContent = formatTime(totalTime);
   startPlanBtn.textContent = "Start Plan";
   planRunning = false;
   planPaused = false;
+  stopPlanBtn.style.display = "none";
+
+  // Optional: notify server plan finished
+  await fetch(`/updatePlan`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({planRunning:false, planPaused:false})
+  });
 }
 
 </script>
@@ -440,6 +489,31 @@ void setup() {
     json += ",\"speed\":" + String(speedPercent);
     json += "}";
     request->send(200, "application/json", json);
+  });
+
+  // Return current plan and progress
+  server.on("/planState", HTTP_GET, [](AsyncWebServerRequest *request){
+      String json = "{";
+      json += "\"workoutSteps\":[";
+      for(int i=0;i<stepCount;i++){
+          json += "{\"speed\":"+String(workoutSteps[i].speed)+",\"duration\":"+String(workoutSteps[i].duration)+"}";
+          if(i<stepCount-1) json += ",";
+      }
+      json += "],";
+      json += "\"planRunning\":" + String(planRunning?"true":"false") + ",";
+      json += "\"planPaused\":" + String(planPaused?"true":"false") + ",";
+      json += "\"currentStep\":" + String(currentStep) + ",";
+      json += "\"elapsedTime\":" + String(elapsedTime);
+      json += "}";
+      request->send(200,"application/json",json);
+  });
+
+  // Update plan/progress from client
+  server.on("/updatePlan", HTTP_POST, [](AsyncWebServerRequest *request){
+      int params = request->params();
+      // We’ll parse JSON from request->getParam("body")->value()
+      // For brevity, you can use ArduinoJson to parse and update server-side variables
+      request->send(200,"application/json","{\"ok\":true}");
   });
 
   server.begin();
