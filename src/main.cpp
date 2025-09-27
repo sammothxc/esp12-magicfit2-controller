@@ -463,13 +463,21 @@ void IRAM_ATTR pwmTick() {
   }
 
   unsigned long now = millis();
+
+  // Ramp duty toward targetDuty
   if (dutyPercent != targetDuty && now - lastRampMs >= rampStepMs) {
-    if (dutyPercent < targetDuty) dutyPercent = min(dutyPercent + rampStepAmount, targetDuty);
-    else if (dutyPercent > targetDuty) dutyPercent = max(dutyPercent - rampStepAmount, targetDuty);
+    if (dutyPercent < targetDuty) {
+      dutyPercent += rampStepAmount;
+      if (dutyPercent > targetDuty) dutyPercent = targetDuty; // prevent overshoot
+    } else if (dutyPercent > targetDuty) {
+      dutyPercent -= rampStepAmount;
+      if (dutyPercent < targetDuty) dutyPercent = targetDuty; // prevent undershoot
+    }
     computePWMDurations();
     lastRampMs = now;
   }
 
+  // PWM toggle
   if (pwmState) {
     digitalWrite(pwmPin, LOW);
     pwmState = false;
