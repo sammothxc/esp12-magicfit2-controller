@@ -44,6 +44,7 @@ const int rampStepMs = 50;
 const int rampStepAmount = 1;
 const int dutyMin = 50;  // fastest
 const int dutyMax = 85;  // slowest
+const bool pwmInverted = true; // true for 2N3904
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -446,15 +447,21 @@ void handleWebServerRequest(AsyncWebServerRequest *request) {
 }
 
 void computePWMDurations() {
-  int periodMs = 1000 / pwmFreq;
-  periodMs = max(periodMs, 1);
-  highMs = periodMs * (100 - dutyPercent) / 100; // inverted for 2N3904
-  lowMs  = periodMs - highMs;
+    int periodMs = 1000 / pwmFreq;
+    periodMs = max(periodMs, 1);
+
+    if (pwmInverted) {
+        highMs = periodMs * (100 - dutyPercent) / 100;
+        lowMs  = periodMs - highMs;
+    } else {
+        highMs = periodMs * dutyPercent / 100;
+        lowMs  = periodMs - highMs;
+    }
 }
 
 void setDutyFromUI(int uiVal) {
   uiVal = constrain(uiVal, 0, 100);
-  dutyPercent = map(uiVal, 0, 100, 85, 50); // 0=slowest,100=fastest
+  targetDuty = uiVal;
 }
 
 void IRAM_ATTR pwmTick() {
@@ -466,20 +473,13 @@ void IRAM_ATTR pwmTick() {
 
   unsigned long now = millis();
 
-  // Ramp duty toward targetDuty
-  if (dutyPercent != targetDuty && now - lastRampMs >= rampStepMs) {
-    if (dutyPercent < targetDuty) {
-      dutyPercent += rampStepAmount;
-      if (dutyPercent > targetDuty) dutyPercent = targetDuty; // prevent overshoot
-    } else if (dutyPercent > targetDuty) {
-      dutyPercent -= rampStepAmount;
-      if (dutyPercent < targetDuty) dutyPercent = targetDuty; // prevent undershoot
-    }
+if (dutyPercent != targetDuty && now - lastRampMs >= rampStepMs) {
+    if (dutyPercent < targetDuty) dutyPercent = min(dutyPercent + rampStepAmount, targetDuty);
+    else if (dutyPercent > targetDuty) dutyPercent = max(dutyPercent - rampStepAmount, targetDuty);
     computePWMDurations();
     lastRampMs = now;
-  }
+}
 
-  // PWM toggle
   if (pwmState) {
     digitalWrite(pwmPin, LOW);
     pwmState = false;
