@@ -30,7 +30,7 @@ Ticker pwmTicker;
 WifiConf wifiConf;
 
 const int pwmPin = D2;
-volatile int dutyPercent = 85;  // 85% = slowest
+volatile int dutyPercent = 85;
 volatile int targetDuty = 85;
 const int pwmFreq = 63;
 volatile bool pwmState = false;
@@ -42,6 +42,8 @@ int highMs = 0, lowMs = 0;
 unsigned long lastRampMs = 0;
 const int rampStepMs = 50;
 const int rampStepAmount = 1;
+const int dutyMin = 50;  // fastest
+const int dutyMax = 85;  // slowest
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
