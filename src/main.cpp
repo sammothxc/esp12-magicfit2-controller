@@ -2,8 +2,6 @@
 #include <EEPROM.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
-#include <ESP8266mDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
 #include "secrets.h"
@@ -11,7 +9,6 @@
 
 const char* ssid = SECRET_SSID2_4;
 const char* password = SECRET_SSID_PASS;
-const char* hostname = "vibeplate";
 
 const char* AP_ssid = "ESP12f_magicfit2";
 const char* AP_password = SECRET_SSID_PASS;
@@ -25,7 +22,6 @@ struct WifiConf {
 };
 
 AsyncWebServer server(80);
-ESP8266WiFiMulti WiFiMulti;
 Ticker pwmTicker;
 WifiConf wifiConf;
 
