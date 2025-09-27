@@ -9,13 +9,25 @@
 #include "secrets.h"
 
 
-const char* ssid = SECRET_SSID;
-const char* password = SECRET_PASS;
+const char* ssid = SECRET_SSID2_4;
+const char* password = SECRET_SSID_PASS;
 const char* hostname = "vibeplate";
+
+const char* AP_ssid = "ESP12f_herbgarden";
+const char* AP_password = SECRET_SSID_PASS;
+IPAddress AP_IP(10,1,1,1);
+IPAddress AP_subnet(255,255,255,0);
+
+struct WifiConf {
+  char wifi_ssid[50];
+  char wifi_password[50];
+  char cstr_terminator = 0;
+};
 
 AsyncWebServer server(80);
 ESP8266WiFiMulti WiFiMulti;
 Ticker pwmTicker;
+WifiConf wifiConf;
 
 const int pwmPin = D2;
 volatile int dutyPercent = 85;  // 85% = slowest
@@ -370,6 +382,62 @@ window.addEventListener("load", () => {
 </html>
 )rawliteral";
 
+void readWifiConf() {
+  for (size_t i = 0; i < sizeof(wifiConf); i++)
+    ((char*)(&wifiConf))[i] = char(EEPROM.read(i));
+  wifiConf.cstr_terminator = 0;
+}
+
+void writeWifiConf() {
+  for (size_t i = 0; i < sizeof(wifiConf); i++)
+    EEPROM.write(i, ((char*)(&wifiConf))[i]);
+  EEPROM.commit();
+}
+
+bool connectToWiFi() {
+  Serial.printf("Connecting to '%s'\n", wifiConf.wifi_ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(wifiConf.wifi_ssid, wifiConf.wifi_password);
+  if (WiFi.waitForConnectResult() == WL_CONNECTED) {
+    Serial.print("Connected. IP: "); Serial.println(WiFi.localIP());
+    return true;
+  } 
+  Serial.println("Connection failed");
+  return false;
+}
+
+void setUpAccessPoint() {
+  Serial.println("Setting up AP");
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAPConfig(AP_IP, AP_IP, AP_subnet);
+  WiFi.softAP(AP_ssid, AP_password);
+  Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
+}
+
+void handleWebServerRequest(AsyncWebServerRequest *request) {
+  bool save=false;
+  if(request->hasParam("ssid",true) && request->hasParam("password",true)){
+    String s=request->getParam("ssid",true)->value();
+    String p=request->getParam("password",true)->value();
+    s.toCharArray(wifiConf.wifi_ssid,sizeof(wifiConf.wifi_ssid));
+    p.toCharArray(wifiConf.wifi_password,sizeof(wifiConf.wifi_password));
+    writeWifiConf(); save=true;
+  }
+
+  String msg = "<!DOCTYPE html><html><head><title>ESP Wifi Config</title></head><body>";
+  if(save){ msg += "<div>Saved! Rebooting...</div>"; } 
+  else{
+    msg += "<h1>ESP Wifi Config</h1><form action='/' method='POST'>";
+    msg += "<div>SSID:</div><input type='text' name='ssid' value='"+String(wifiConf.wifi_ssid)+"'/>";
+    msg += "<div>Password:</div><input type='password' name='password' value='"+String(wifiConf.wifi_password)+"'/>";
+    msg += "<div><input type='submit' value='Save'/></div></form>";
+  }
+  msg += "</body></html>";
+
+  request->send(200,"text/html",msg);
+  if(save){ request->client()->close(); delay(1000); ESP.restart(); }
+}
+
 void IRAM_ATTR pwmTick() {
   static uint32_t highMs, lowMs;
 
@@ -417,36 +485,16 @@ String formatElapsed(unsigned long ms) {
   unsigned long totalSec = ms / 1000;
   unsigned int minutes = totalSec / 60;
   unsigned int seconds = totalSec % 60;
-  char buf[6];
+  char buf[10];
   sprintf(buf,"%02u:%02u",minutes,seconds);
   return String(buf);
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial.println("Booting");
-  WiFi.mode(WIFI_STA);
-  WiFi.hostname(hostname);
-  WiFiMulti.addAP(ssid, password);
-  Serial.println();
-  Serial.print("Connecting to WiFi");
-  while (WiFiMulti.run() != WL_CONNECTED) { delay(500); Serial.print("."); }
-  Serial.println();
-  if (MDNS.begin(hostname)) {
-    Serial.print("mDNS responder started: http://");
-    Serial.print(hostname);
-    Serial.println(".local");
-  } else {
-    Serial.println("Error setting up MDNS responder!");
-  }
-  Serial.print("Connected! IP: ");
-  Serial.println(WiFi.localIP());
-  delay(500);
-  pinMode(pwmPin, OUTPUT);
-  digitalWrite(pwmPin, LOW);
-  pwmTicker.once_ms(0, pwmTick);
-
-  // Serve page
+void setUpWebServer() {
+  server.on("/wifi", HTTP_GET, handleWebServerRequest);
+  server.on("/wifi", HTTP_POST, handleWebServerRequest);
+  ElegantOTA.begin(&server);  // OTA on /update
+    // Serve page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html);
   });
@@ -490,8 +538,21 @@ void setup() {
     json += "}";
     request->send(200, "application/json", json);
   });
-
   server.begin();
+  Serial.println("WebServer + OTA ready");
+}
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println();
+  Serial.println("Booting");
+  delay(500);
+  pinMode(pwmPin, OUTPUT);
+  digitalWrite(pwmPin, LOW);
+  pwmTicker.once_ms(0, pwmTick);
+  readWifiConf();
+  if(!connectToWiFi()){ setUpAccessPoint(); }
+  setUpWebServer();
 }
 
 void loop() {
