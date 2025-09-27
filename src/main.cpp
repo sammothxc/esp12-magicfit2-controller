@@ -9,9 +9,7 @@
 
 const char* ssid = SECRET_SSID2_4;
 const char* password = SECRET_SSID_PASS;
-
-const char* AP_ssid = "ESP12f_magicfit2";
-const char* AP_password = SECRET_SSID_PASS;
+const char* hostname = "esp12f-magicfit2";
 IPAddress AP_IP(10,1,1,1);
 IPAddress AP_subnet(255,255,255,0);
 
@@ -401,6 +399,7 @@ void writeWifiConf() {
 bool connectToWiFi() {
   Serial.printf("Connecting to '%s'\n", wifiConf.wifi_ssid);
   WiFi.mode(WIFI_STA);
+  WiFi.setHostname(hostname);
   WiFi.begin(wifiConf.wifi_ssid, wifiConf.wifi_password);
   if (WiFi.waitForConnectResult() == WL_CONNECTED) {
     Serial.print("Connected. IP: "); Serial.println(WiFi.localIP());
@@ -414,7 +413,7 @@ void setUpAccessPoint() {
   Serial.println("Setting up AP");
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(AP_IP, AP_IP, AP_subnet);
-  WiFi.softAP(AP_ssid, AP_password);
+  WiFi.softAP(hostname, SECRET_SSID_PASS);
   Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
 }
 
