@@ -31,6 +31,7 @@ WifiConf wifiConf;
 
 const int pwmPin = D2;
 volatile int dutyPercent = 85;  // 85% = slowest
+volatile int targetDuty = 85;
 const int pwmFreq = 63;
 volatile bool pwmState = false;
 volatile bool motorOn = false;
@@ -38,6 +39,9 @@ unsigned long startMillis = 0;
 unsigned long accumulatedMillis = 0;
 int speedPercent = 0; // 0 = slowest, 100 = fastest
 int highMs = 0, lowMs = 0;
+unsigned long lastRampMs = 0;
+const int rampStepMs = 50;
+const int rampStepAmount = 1;
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -449,7 +453,6 @@ void computePWMDurations() {
 void setDutyFromUI(int uiVal) {
   uiVal = constrain(uiVal, 0, 100);
   dutyPercent = map(uiVal, 0, 100, 85, 50); // 0=slowest,100=fastest
-  computePWMDurations();
 }
 
 void IRAM_ATTR pwmTick() {
@@ -457,6 +460,14 @@ void IRAM_ATTR pwmTick() {
     digitalWrite(pwmPin, LOW);
     pwmTicker.once_ms(100, pwmTick);
     return;
+  }
+
+  unsigned long now = millis();
+  if (dutyPercent != targetDuty && now - lastRampMs >= rampStepMs) {
+    if (dutyPercent < targetDuty) dutyPercent += rampStepAmount;
+    else if (dutyPercent > targetDuty) dutyPercent -= rampStepAmount;
+    computePWMDurations();
+    lastRampMs = now;
   }
 
   if (pwmState) {
@@ -473,12 +484,15 @@ void IRAM_ATTR pwmTick() {
 void startMotor() {
   if (!motorOn) {
     motorOn = true;
-    pwmState = false;
+    pwmState = false;       
+    dutyPercent = 85;
+    lastRampMs = millis();
     digitalWrite(pwmPin, LOW);
     pwmTicker.once_ms(0, pwmTick);
     startMillis = millis();
   }
 }
+
 
 void stopMotor() {
   if (motorOn) {
