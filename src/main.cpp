@@ -464,8 +464,8 @@ void IRAM_ATTR pwmTick() {
 
   unsigned long now = millis();
   if (dutyPercent != targetDuty && now - lastRampMs >= rampStepMs) {
-    if (dutyPercent < targetDuty) dutyPercent += rampStepAmount;
-    else if (dutyPercent > targetDuty) dutyPercent -= rampStepAmount;
+    if (dutyPercent < targetDuty) dutyPercent = min(dutyPercent + rampStepAmount, targetDuty);
+    else if (dutyPercent > targetDuty) dutyPercent = max(dutyPercent - rampStepAmount, targetDuty);
     computePWMDurations();
     lastRampMs = now;
   }
@@ -497,6 +497,7 @@ void startMotor() {
 void stopMotor() {
   if (motorOn) {
     motorOn = false;
+    digitalWrite(pwmPin, LOW);
     accumulatedMillis += millis() - startMillis;
   }
 }
