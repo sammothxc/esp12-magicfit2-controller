@@ -427,7 +427,7 @@ void handleWebServerRequest(AsyncWebServerRequest *request) {
   String msg = "<!DOCTYPE html><html><head><title>ESP Wifi Config</title></head><body>";
   if(save){ msg += "<div>Saved! Rebooting...</div>"; } 
   else{
-    msg += "<h1>ESP Wifi Config</h1><form action='/' method='POST'>";
+    msg += "<h1>ESP Wifi Config</h1><form action='/wifi' method='POST'>";
     msg += "<div>SSID:</div><input type='text' name='ssid' value='"+String(wifiConf.wifi_ssid)+"'/>";
     msg += "<div>Password:</div><input type='password' name='password' value='"+String(wifiConf.wifi_password)+"'/>";
     msg += "<div><input type='submit' value='Save'/></div></form>";
