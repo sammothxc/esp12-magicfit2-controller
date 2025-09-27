@@ -37,6 +37,7 @@ volatile bool motorOn = false;
 unsigned long startMillis = 0;
 unsigned long accumulatedMillis = 0;
 int speedPercent = 0; // 0 = slowest, 100 = fastest
+int highMs = 0, lowMs = 0;
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -438,10 +439,21 @@ void handleWebServerRequest(AsyncWebServerRequest *request) {
   if(save){ request->client()->close(); delay(1000); ESP.restart(); }
 }
 
-void IRAM_ATTR pwmTick() {
-  static uint32_t highMs, lowMs;
+void computePWMDurations() {
+  int periodMs = 1000 / pwmFreq;
+  periodMs = max(periodMs, 1);
+  highMs = periodMs * (100 - dutyPercent) / 100; // inverted for 2N3904
+  lowMs  = periodMs - highMs;
+}
 
-  if (!motorOn) { // motor off
+void setDutyFromUI(int uiVal) {
+  uiVal = constrain(uiVal, 0, 100);
+  dutyPercent = map(uiVal, 0, 100, 85, 50); // 0=slowest,100=fastest
+  computePWMDurations();
+}
+
+void IRAM_ATTR pwmTick() {
+  if (!motorOn) {
     digitalWrite(pwmPin, LOW);
     pwmTicker.once_ms(100, pwmTick);
     return;
@@ -456,20 +468,14 @@ void IRAM_ATTR pwmTick() {
     pwmState = true;
     pwmTicker.once_ms(highMs, pwmTick);
   }
-
-  int periodMs = 1000 / pwmFreq;
-  highMs = periodMs * (100 - dutyPercent) / 100; // inverted for 2N3904
-  lowMs  = periodMs - highMs;
-}
-
-void setDutyFromUI(int uiVal) {
-  uiVal = constrain(uiVal,0,100);
-  dutyPercent = map(uiVal,0,100,85,50); // 0=slowest,100=fastest
 }
 
 void startMotor() {
   if (!motorOn) {
     motorOn = true;
+    pwmState = false;
+    digitalWrite(pwmPin, LOW);
+    pwmTicker.once_ms(0, pwmTick);
     startMillis = millis();
   }
 }
@@ -550,6 +556,7 @@ void setup() {
   pinMode(pwmPin, OUTPUT);
   digitalWrite(pwmPin, LOW);
   pwmTicker.once_ms(0, pwmTick);
+  EEPROM.begin(512);
   readWifiConf();
   if(!connectToWiFi()){ setUpAccessPoint(); }
   setUpWebServer();
