@@ -1,9 +1,13 @@
-#include "esp12-magicfit2-controller_secrets.h"
+#include <Arduino.h>
+#include <EEPROM.h>
 #include <Ticker.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266mDNS.h>
 #include <ESPAsyncWebServer.h>
+#include <ElegantOTA.h>
+#include "secrets.h"
+
 
 const char* ssid = SECRET_SSID;
 const char* password = SECRET_PASS;
