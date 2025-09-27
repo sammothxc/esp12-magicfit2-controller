@@ -13,7 +13,7 @@ const char* ssid = SECRET_SSID2_4;
 const char* password = SECRET_SSID_PASS;
 const char* hostname = "vibeplate";
 
-const char* AP_ssid = "ESP12f_herbgarden";
+const char* AP_ssid = "ESP12f_magicfit2";
 const char* AP_password = SECRET_SSID_PASS;
 IPAddress AP_IP(10,1,1,1);
 IPAddress AP_subnet(255,255,255,0);
